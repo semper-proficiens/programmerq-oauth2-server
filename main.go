@@ -31,7 +31,12 @@ func main() {
 	manager.SetRefreshTokenCfg(manage.DefaultRefreshTokenCfg)
 
 	http.HandleFunc("/token", handlers.TokenHandler(srv))
+	http.HandleFunc("/authorize", handlers.AuthorizeHandler(srv))
+	http.HandleFunc("/login", handlers.LoginHandler())
+	http.HandleFunc("/consent", handlers.ConsentHandler())
 	http.HandleFunc("/protected", handlers.ProtectedHandler(srv))
+	http.HandleFunc("/oidc", handlers.OIDCHandler())
 
+	http.Handle("/styles/", http.StripPrefix("/styles/", http.FileServer(http.Dir("static/styles"))))
 	log.Fatal(http.ListenAndServe(":9096", nil))
 }
