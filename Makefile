@@ -4,3 +4,6 @@ help:
 
 mac_services_listening: ## display listening processes and what port
 	@lsof -i -P | grep LISTEN
+
+go_tests: ## runs all go tests
+	go test -v ./...
