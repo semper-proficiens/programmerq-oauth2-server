@@ -18,11 +18,14 @@ func main() {
 
 	// client memory store
 	clientStore := store.NewClientStore()
-	clientStore.Set("test_client", &models.Client{
+	err := clientStore.Set("test_client", &models.Client{
 		ID:     "test_client",
 		Secret: "test_secret",
 		Domain: "http://localhost",
 	})
+	if err != nil {
+		return
+	}
 	manager.MapClientStorage(clientStore)
 
 	srv := server.NewDefaultServer(manager)
