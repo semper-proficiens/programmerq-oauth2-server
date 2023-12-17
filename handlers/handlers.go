@@ -2,9 +2,16 @@ package handlers
 
 import (
 	"github.com/go-oauth2/oauth2/v4/server"
+	"github.com/gorilla/sessions"
 	"html/template"
 	"net/http"
+	"net/url"
+	"os"
+	"programmerq-oauth2-server/authenticator/oidc/auth0"
+	"programmerq-oauth2-server/util"
 )
+
+var store = sessions.NewCookieStore([]byte(os.Getenv("AUTH0_SECURE_COOKIE")))
 
 // TokenHandler handles token requests.
 func TokenHandler(srv *server.Server) http.HandlerFunc {
@@ -76,9 +83,112 @@ func ConsentHandler() http.HandlerFunc {
 	}
 }
 
-// OIDCHandler for OIDC authentication
-func OIDCHandler() http.HandlerFunc {
+// OIDCAuth0Handler for OIDC authentication using Auth0
+func OIDCAuth0Handler(auth *auth0.OIDCAuth0Authenticator) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "https://your-oidc-provider.com/authorize?...", http.StatusSeeOther)
+		state, err := util.GenerateRandomState()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		// retrieve current session
+		session, _ := store.Get(r, "session-name")
+		// set session "state" to a random value
+		session.Values["state"] = state
+		// persist session state in the cookie sent to server
+		if err := sessions.Save(r, w); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		// TODO: AuthCodeURL opts ...AuthCodeOption
+		http.Redirect(w, r, auth.AuthCodeURL(state), http.StatusTemporaryRedirect)
+	}
+}
+
+// OIDCAuth0CallbackHandler the handler for OIDC redirect from Auth0
+func OIDCAuth0CallbackHandler(auth *auth0.OIDCAuth0Authenticator) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		session, _ := store.Get(r, "session-name")
+
+		// check session id is the same
+		if r.URL.Query().Get("state") != session.Values["state"] {
+			http.Error(w, "Invalid state parameter.", http.StatusBadRequest)
+			return
+		}
+
+		// TODO AuthCodeOption
+		token, err := auth.Exchange(r.Context(), r.URL.Query().Get("code"))
+		if err != nil {
+			http.Error(w, "Failed to exchange an authorization code for a token.", http.StatusUnauthorized)
+			return
+		}
+
+		idToken, err := auth.VerifyIDToken(r.Context(), token)
+		if err != nil {
+			http.Error(w, "Failed to verify ID Token.", http.StatusInternalServerError)
+			return
+		}
+
+		var profile map[string]interface{}
+		if err := idToken.Claims(&profile); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		session.Values["access_token"] = token.AccessToken
+		session.Values["profile"] = profile
+		if err := sessions.Save(r, w); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Redirect to logged in page.
+		http.Redirect(w, r, "/user", http.StatusTemporaryRedirect)
+	}
+}
+
+func UserHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		session, _ := store.Get(r, "session-name")
+		profile := session.Values["profile"]
+
+		tmpl, err := template.ParseFiles("static/user.html")
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		if err := tmpl.Execute(w, profile); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+}
+
+// OIDCAuth0LogoutHandler the handler for OIDC logout from Auth0
+func OIDCAuth0LogoutHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logoutUrl, err := url.Parse("https://" + os.Getenv("AUTH0_DOMAIN") + "/v2/logout")
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		scheme := "http"
+		if r.TLS != nil {
+			scheme = "https"
+		}
+
+		returnTo, err := url.Parse(scheme + "://" + r.Host)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		parameters := url.Values{}
+		parameters.Add("returnTo", returnTo.String())
+		parameters.Add("client_id", os.Getenv("AUTH0_CLIENT_ID"))
+		logoutUrl.RawQuery = parameters.Encode()
+
+		http.Redirect(w, r, logoutUrl.String(), http.StatusTemporaryRedirect)
 	}
 }
