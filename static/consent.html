@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Consent</title>
+</head>
+<body>
+<form action="/consent" method="post">
+    <p>Do you grant our application access to the following data?</p>
+    <ul>
+        {{ range .Scopes }}
+        <li>{{ . }}</li>
+        {{ end }}
+    </ul>
+    <input type="submit" name="consent" value="Grant">
+    <input type="submit" name="consent" value="Deny">
+</form>
+</body>
+</html>
