@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/gob"
 	"github.com/go-oauth2/oauth2/v4/server"
 	"github.com/gorilla/sessions"
 	"html/template"
@@ -11,7 +12,13 @@ import (
 	"programmerq-oauth2-server/util"
 )
 
-var store = sessions.NewCookieStore([]byte(os.Getenv("AUTH0_SECURE_COOKIE")))
+var store *sessions.CookieStore
+
+// both store and the gob register need to be called out before other functions, and only once
+func init() {
+	gob.Register(map[string]interface{}{})
+	store = sessions.NewCookieStore([]byte("your-secret-key"))
+}
 
 // TokenHandler handles token requests.
 func TokenHandler(srv *server.Server) http.HandlerFunc {
