@@ -17,6 +17,7 @@ func main() {
 	// initialize router
 	var r router.Router = &router.DefaultRouter{}
 
+	// Initialize an Auth0 OIDC provider authenticator
 	auth0, err := auth0.New()
 	if err != nil {
 		log.Fatalf("Failed to initialize the authenticator: %v", err)

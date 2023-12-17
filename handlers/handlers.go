@@ -5,14 +5,36 @@ import (
 	"github.com/go-oauth2/oauth2/v4/server"
 	"github.com/gorilla/sessions"
 	"html/template"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
 	"programmerq-oauth2-server/authenticator/oidc/auth0"
 	"programmerq-oauth2-server/util"
+	"strings"
 )
 
 var store *sessions.CookieStore
+
+// ConsentForm is a struct that holds the data you want to pass to the consent form.
+type ConsentForm struct {
+	Scopes []string
+}
+
+// ResponseCapture captures response from handler. TODO remove after tests
+type ResponseCapture struct {
+	http.ResponseWriter
+	location string
+}
+
+func (w *ResponseCapture) Header() http.Header {
+	return w.ResponseWriter.Header()
+}
+
+func (w *ResponseCapture) WriteHeader(statusCode int) {
+	w.location = w.Header().Get("Location")
+	w.ResponseWriter.WriteHeader(statusCode)
+}
 
 // both store and the gob register need to be called out before other functions, and only once
 func init() {
@@ -43,21 +65,47 @@ func ProtectedHandler(srv *server.Server) http.HandlerFunc {
 // AuthorizeHandler handles authorization requests
 func AuthorizeHandler(srv *server.Server) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Check if user is authenticated.
-		// In a real application, you would check a session or a secure cookie to see if the user is authenticated.
-		// Here, we'll just check if a "user" cookie exists.
-		userCookie, err := r.Cookie("user")
-		if err != nil || userCookie.Value == "" {
+		session, err := store.Get(r, "session-name")
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		// Check for user in session values.
+		user, ok := session.Values["user"]
+		log.Printf("User session: %s", user)
+		if !ok || user == "" {
+			// Extract the scopes from the request.
+			scopes := r.URL.Query().Get("scope")
+			log.Printf("Scopes from the session /authorize:%s", scopes)
+			// Store the scopes in the session.
+			session.Values["scopes"] = scopes
+			session.Save(r, w)
+
 			// If the user is not authenticated, redirect them to the login endpoint.
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
 			return
 		}
 
+		log.Print("User Authenticated")
+
 		// If the user is authenticated, handle the authorize request.
-		err = srv.HandleAuthorizeRequest(w, r)
+		rw := &ResponseCapture{ResponseWriter: w}
+		err = srv.HandleAuthorizeRequest(rw, r)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
+		}
+		// Parse the location header to get the code
+		if rw.location != "" {
+			u, err := url.Parse(rw.location)
+			if err != nil {
+				log.Printf("Error parsing redirect URL: %s", err)
+			} else {
+				code := u.Query().Get("code")
+				if code != "" {
+					log.Printf("Authorization code generated: %s", code)
+				}
+			}
 		}
 	}
 }
@@ -80,12 +128,41 @@ func LoginHandler() http.HandlerFunc {
 // ConsentHandler for user consent
 func ConsentHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "POST" {
-			// Here, you should check the user's consent.
-			// If the user has given consent, you can store this information in a session or a secure cookie.
-			// Then, redirect the user back to the /authorize endpoint.
-		} else {
+		session, err := store.Get(r, "session-name")
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		scopes, ok := session.Values["scopes"].(string)
+		log.Printf("Scopes from session /consent non-POST:%s", scopes)
+		if !ok {
+			http.Error(w, "Scopes not found in session /consent non-POST", http.StatusInternalServerError)
+			return
+		}
+
+		if r.Method == "GET" {
 			// If it's a GET request, render the consent form.
+			// Get the scopes from the session.
+			tmpl := template.Must(template.ParseFiles("static/consent.html"))
+			tmpl.Execute(w, ConsentForm{
+				Scopes: strings.Split(scopes, " "),
+			})
+			return
+		}
+
+		if r.Method == "POST" {
+			// Process the form submission here:
+			// Get the user's choice from the form.
+			choice := r.FormValue("consent")
+
+			if choice == "Grant" {
+				// If the user granted consent, redirect back to /authorize.
+				log.Printf("Scopes from the session in /consent POST method:%s", scopes)
+				http.Redirect(w, r, "/authorize", http.StatusSeeOther)
+			} else {
+				// If the user denied consent, handle this case as needed.
+				// You could redirect them to an error page, for example.
+			}
 		}
 	}
 }
