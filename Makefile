@@ -8,9 +8,11 @@ mac_services_listening: ## display listening processes and what port
 go_tests: ## runs all go tests
 	go test -v ./...
 
+run: ## start oauth2 server
+	@go run main.go
+
 local_token_test:
 	curl -X POST -d "client_id=test_client&client_secret=test_secret&grant_type=client_credentials&scope=read" http://localhost:9096/token
 
 local_protected_test:
 	curl -H "Authorization: Bearer NZAWMMFIZGUTNMUXMC0ZY2YYLTG2ZDATZJDLNDZLMWYWYJLK" http://localhost:9096/protected
-

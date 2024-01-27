@@ -7,15 +7,34 @@ import (
 	"programmerq-oauth2-server/authenticator/oidc/auth0"
 	"programmerq-oauth2-server/handlers"
 	"programmerq-oauth2-server/router"
+	"programmerq-oauth2-server/util"
 
 	"github.com/go-oauth2/oauth2/v4/manage"
 	"github.com/go-oauth2/oauth2/v4/server"
 	"github.com/go-oauth2/oauth2/v4/store"
 )
 
+var (
+	envVarKeys = []string{
+		// these are env variable keys needed to talk to Auth0 OIDC Server
+		"AUTH0_CLIENT_ID",
+		"AUTH0_CLIENT_SECRET",
+		"AUTH0_DOMAIN",
+		"AUTH0_CALLBACK_URL",
+		"AUTH0_SECURE_COOKIE",
+	}
+)
+
 func main() {
 	// initialize router
 	var r router.Router = &router.DefaultRouter{}
+
+	// check no environment variable is empty
+	for _, key := range envVarKeys {
+		if err := util.EnvironmentVarIsNotEmpty(key); err != nil {
+			log.Fatal(err)
+		}
+	}
 
 	// Initialize an Auth0 OIDC provider authenticator
 	auth0, err := auth0.New()
