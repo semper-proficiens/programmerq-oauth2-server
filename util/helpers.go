@@ -5,6 +5,8 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"github.com/gorilla/sessions"
+	"net/http"
 	"os"
 )
 
@@ -29,4 +31,14 @@ func EnvironmentVarIsNotEmpty(envVarKey string) error {
 		return errors.New(fmt.Sprintf("environment variable '%s' can't be empty", envVarKey))
 	}
 	return nil
+}
+
+// GetSessionValue tries to retrieve a given session value with a given key and returns the value or returns an error.
+func GetSessionValue(session *sessions.Session, key string, w http.ResponseWriter) (string, error) {
+	value, ok := session.Values[key].(string)
+	if !ok {
+		http.Error(w, fmt.Sprintf("%s not found in session", key), http.StatusInternalServerError)
+		return "", fmt.Errorf("%s not found in session", key)
+	}
+	return value, nil
 }

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/gob"
+	"fmt"
 	"github.com/go-oauth2/oauth2/v4/server"
 	"github.com/gorilla/sessions"
 	"html/template"
@@ -73,12 +74,22 @@ func AuthorizeHandler(srv *server.Server) http.HandlerFunc {
 		// Check for user in session values.
 		user, ok := session.Values["user"]
 		if !ok || user == "" {
-			// Extract the scopes from the request.
+			// Extract the response_type, client_id and scopes from the request.
+			responseType := r.URL.Query().Get("response_type")
+			clientId := r.URL.Query().Get("client_id")
 			scopes := r.URL.Query().Get("scope")
+
 			log.Printf("Scopes from the session /authorize:%s", scopes)
-			// Store the scopes in the session.
+			// Store the response_type, client_id and scopes in the session.
+			session.Values["response_type"] = responseType
+			session.Values["client_id"] = clientId
 			session.Values["scopes"] = scopes
-			session.Save(r, w)
+			err = session.Save(r, w)
+			if err != nil {
+				log.Printf("Error saving session: %v", err)
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+				return
+			}
 
 			// If the user is not authenticated, redirect them to the login endpoint.
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
@@ -86,6 +97,7 @@ func AuthorizeHandler(srv *server.Server) http.HandlerFunc {
 		}
 
 		log.Print("User Authenticated")
+		log.Printf("URL: %v", r.URL)
 
 		// If the user is authenticated, handle the authorize request.
 		rw := &ResponseCapture{ResponseWriter: w}
@@ -132,12 +144,24 @@ func ConsentHandler() http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		scopes, ok := session.Values["scopes"].(string)
-		log.Printf("Scopes from session /consent non-POST:%s", scopes)
-		if !ok {
-			http.Error(w, "Scopes not found in session /consent non-POST", http.StatusInternalServerError)
+		scopes, err := util.GetSessionValue(session, "scopes", w)
+		if err != nil {
 			return
 		}
+
+		responseType, err := util.GetSessionValue(session, "response_type", w)
+		if err != nil {
+			return
+		}
+
+		clientId, err := util.GetSessionValue(session, "client_id", w)
+		if err != nil {
+			return
+		}
+
+		log.Printf("Scopes from session /consent non-POST:%s", scopes)
+		log.Printf("Response Type from session /consent non-POST:%s", responseType)
+		log.Printf("Client ID from session /consent non-POST:%s", clientId)
 
 		if r.Method == "GET" {
 			// If it's a GET request, render the consent form.
@@ -155,9 +179,9 @@ func ConsentHandler() http.HandlerFunc {
 			choice := r.FormValue("consent")
 
 			if choice == "Grant" {
+				authorizeUrl := fmt.Sprintf("/authorize?response_type=%s&client_id=%s&redirect_uri=http://localhost:9096&scope=%s", responseType, clientId, scopes)
 				// If the user granted consent, redirect back to /authorize.
-				log.Printf("Scopes from the session in /consent POST method:%s", scopes)
-				http.Redirect(w, r, "/authorize", http.StatusSeeOther)
+				http.Redirect(w, r, authorizeUrl, http.StatusSeeOther)
 			} else {
 				// If the user denied consent, handle this case as needed.
 				// You could redirect them to an error page, for example.
