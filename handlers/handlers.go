@@ -72,7 +72,6 @@ func AuthorizeHandler(srv *server.Server) http.HandlerFunc {
 		}
 		// Check for user in session values.
 		user, ok := session.Values["user"]
-		log.Printf("User session: %s", user)
 		if !ok || user == "" {
 			// Extract the scopes from the request.
 			scopes := r.URL.Query().Get("scope")
@@ -200,7 +199,8 @@ func OIDCAuth0CallbackHandler(auth *auth0.OIDCAuth0Authenticator) http.HandlerFu
 			return
 		}
 
-		// TODO AuthCodeOption
+		//TODO AuthCodeOption, add VerifierOption
+		// gets code from Auth0 and exchanges for a token
 		token, err := auth.Exchange(r.Context(), r.URL.Query().Get("code"))
 		if err != nil {
 			http.Error(w, "Failed to exchange an authorization code for a token.", http.StatusUnauthorized)
@@ -221,6 +221,7 @@ func OIDCAuth0CallbackHandler(auth *auth0.OIDCAuth0Authenticator) http.HandlerFu
 
 		session.Values["access_token"] = token.AccessToken
 		session.Values["profile"] = profile
+		session.Values["user"] = profile["nickname"]
 		if err := sessions.Save(r, w); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
